@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BoxTrack — Storage Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,wght@0,300;0,600;1,300&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #0f0e0c;
+    --surface: #1a1916;
+    --surface2: #242320;
+    --border: #2e2c28;
+    --accent: #e8c547;
+    --accent2: #c47a3a;
+    --text: #f0ece0;
+    --muted: #7a7568;
+    --danger: #c45a3a;
+    --success: #5a9e6f;
+    --info: #4a8fb5;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'DM Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    background-image: radial-gradient(ellipse at 20% 0%, rgba(232,197,71,0.06) 0%, transparent 60%),
+                      radial-gradient(ellipse at 80% 100%, rgba(196,122,58,0.06) 0%, transparent 60%);
+  }
+  header {
+    padding: 1.5rem 2.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .header-left { display: flex; align-items: baseline; gap: 1rem; }
+  header h1 { font-family: 'Fraunces', serif; font-size: 2rem; font-weight: 600; color: var(--accent); letter-spacing: -0.03em; }
+  header span.sub { font-size: 0.7rem; color: var(--muted); letter-spacing: 0.15em; text-transform: uppercase; }
+
+  /* Sync status bar */
+  .sync-bar {
+    display: flex; align-items: center; gap: 0.6rem;
+    font-size: 0.68rem; color: var(--muted);
+  }
+  .sync-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted); flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .sync-dot.syncing { background: var(--accent); animation: pulse 1s infinite; }
+  .sync-dot.ok      { background: var(--success); }
+  .sync-dot.error   { background: var(--danger); }
+
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 2rem 2.5rem; }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.2rem; }
+  .stat-val { font-family: 'Fraunces', serif; font-size: 2rem; color: var(--accent); line-height: 1; }
+  .stat-label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 0.3rem; }
+
+  .layout { display: grid; grid-template-columns: 380px 1fr; gap: 1.5rem; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; }
+  .panel-title { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--muted); margin-bottom: 1.2rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border); }
+
+  .field { margin-bottom: 1rem; }
+  label { display: block; font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.4rem; }
+  input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.85rem;
+    padding: 0.6rem 0.8rem; transition: border-color 0.2s; outline: none;
+  }
+  input:focus { border-color: var(--accent); }
+  .input-row { display: flex; gap: 0.5rem; align-items: flex-end; }
+  .input-row input { flex: 1; }
+
+  /* ── Voice Wizard ── */
+  .wizard-steps {
+    display: flex; align-items: center; margin-bottom: 1rem;
+  }
+  .wizard-step { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; }
+  .wstep-num {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 2px solid var(--border); background: var(--bg);
+    color: var(--muted); font-size: 0.7rem; font-weight: 500;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.3s;
+  }
+  .wstep-num.active   { border-color: var(--accent);  color: var(--accent);  background: rgba(232,197,71,0.1); }
+  .wstep-num.done     { border-color: var(--success); color: var(--bg);      background: var(--success); }
+  .wstep-num.done::after { content: '✓'; font-size: 0.65rem; }
+  .wstep-num.done span { display: none; }
+  .wstep-label { font-size: 0.58rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .wizard-connector {
+    flex: 1; height: 2px; background: var(--border); margin: 0 0.3rem;
+    margin-bottom: 1rem; transition: background 0.3s;
+  }
+  .wizard-connector.done { background: var(--success); }
+  .wizard-prompt {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 0.8rem 1rem; margin-bottom: 0.8rem;
+    transition: border-color 0.3s;
+  }
+  .wizard-prompt.active { border-color: var(--accent); }
+  .wizard-prompt-label { font-size: 0.78rem; color: var(--text); margin-bottom: 0.2rem; }
+  .wizard-prompt-hint  { font-size: 0.65rem; color: var(--muted); font-style: italic; }
+
+  .voice-full-btn {
+    width: 100%; background: rgba(232,197,71,0.08); border: 1px dashed var(--accent);
+    border-radius: 8px; color: var(--accent); cursor: pointer;
+    font-family: 'DM Mono', monospace; font-size: 0.75rem; text-transform: uppercase;
+    letter-spacing: 0.1em; padding: 0.9rem 1rem; margin-bottom: 0.8rem;
+    transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+  }
+  .voice-full-btn:hover { background: rgba(232,197,71,0.15); }
+  .voice-full-btn.recording { background: rgba(196,90,58,0.12); border-color: var(--danger); color: var(--danger); animation: pulse 1s infinite; }
+
+  .voice-btn {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--muted); cursor: pointer; font-size: 1rem; padding: 0.6rem 0.8rem; transition: all 0.2s;
+  }
+  .voice-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .voice-btn.recording { border-color: var(--danger); color: var(--danger); animation: pulse 1s infinite; }
+
+  .divider { display: flex; align-items: center; gap: 0.8rem; margin: 0.8rem 0; color: var(--muted); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; }
+  .divider::before, .divider::after { content:''; flex:1; height:1px; background: var(--border); }
+
+  .btn { font-family: 'DM Mono', monospace; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; border-radius: 6px; padding: 0.65rem 1.2rem; transition: all 0.2s; border: none; }
+  .btn-primary { background: var(--accent); color: var(--bg); font-weight: 500; }
+  .btn-primary:hover { background: #f0d060; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+  .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-danger { background: transparent; border: 1px solid transparent; color: var(--muted); font-size: 0.7rem; }
+  .btn-danger:hover { color: var(--danger); }
+  .btn-success { background: var(--success); color: #fff; }
+  .btn-row { display: flex; gap: 0.6rem; margin-top: 1.2rem; }
+
+  .voice-feedback {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.7rem 0.9rem; font-size: 0.75rem; color: var(--muted);
+    min-height: 2.6rem; margin-bottom: 0.6rem; font-style: italic; line-height: 1.5; transition: all 0.2s;
+  }
+  .voice-feedback.active  { color: var(--danger);  border-color: var(--danger);  font-style: normal; }
+  .voice-feedback.success { color: var(--success); border-color: var(--success); font-style: normal; }
+
+  .hint { font-size: 0.62rem; color: var(--muted); margin-bottom: 0.8rem; line-height: 1.6; }
+  .hint strong { color: var(--accent2); }
+
+  .search-bar { display: flex; gap: 0.5rem; margin-bottom: 0.4rem; }
+  .search-bar input { flex: 1; }
+  .voice-search-status { font-size: 0.68rem; color: var(--muted); margin-bottom: 0.8rem; min-height: 1em; font-style: italic; }
+  .voice-search-status.active { color: var(--danger); font-style: normal; }
+
+  .table-wrap { overflow-x: auto; margin-top: 0.6rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  thead th { text-align: left; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; }
+  thead th:hover { color: var(--accent); }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background 0.15s; }
+  tbody tr:hover { background: var(--surface2); }
+  tbody td { padding: 0.75rem 0.8rem; vertical-align: middle; }
+  .box-badge { display: inline-block; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 0.15rem 0.5rem; font-size: 0.75rem; color: var(--accent); font-weight: 500; }
+  .box-badge.sep { background: rgba(196,122,58,0.1); border-color: rgba(196,122,58,0.35); color: var(--accent2); font-size: 0.68rem; }
+  .loc-badge { display: inline-block; background: rgba(196,122,58,0.12); border: 1px solid rgba(196,122,58,0.25); border-radius: 4px; padding: 0.15rem 0.5rem; font-size: 0.72rem; color: var(--accent2); }
+
+  /* Loading overlay */
+  .loading-overlay {
+    position: fixed; inset: 0; background: rgba(15,14,12,0.85);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 100; gap: 1rem;
+  }
+  .loading-overlay.hidden { display: none; }
+  .spinner {
+    width: 36px; height: 36px; border: 3px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-msg { font-size: 0.78rem; color: var(--muted); }
+
+  .empty-state { text-align: center; padding: 3rem; color: var(--muted); font-size: 0.8rem; }
+  .empty-state .big { font-family: 'Fraunces', serif; font-size: 3rem; opacity: 0.2; }
+
+  .toast { position: fixed; bottom: 2rem; right: 2rem; background: var(--surface); border: 1px solid var(--accent); border-radius: 8px; padding: 0.8rem 1.2rem; font-size: 0.78rem; color: var(--text); opacity: 0; transform: translateY(10px); transition: all 0.3s; pointer-events: none; z-index: 999; max-width: 320px; line-height: 1.5; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.error { border-color: var(--danger); }
+
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+    .container { padding: 1rem; }
+    header { padding: 1rem; }
+  }
+
+  /* ── Password Screen ── */
+  .pw-screen {
+    position: fixed; inset: 0; background: var(--bg); z-index: 200;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem;
+    background-image: radial-gradient(ellipse at 20% 0%, rgba(232,197,71,0.07) 0%, transparent 60%),
+                      radial-gradient(ellipse at 80% 100%, rgba(196,122,58,0.07) 0%, transparent 60%);
+  }
+  .pw-screen.hidden { display: none; }
+  .pw-logo { font-family: 'Fraunces', serif; font-size: 3rem; font-weight: 600; color: var(--accent); letter-spacing: -0.03em; }
+  .pw-sub { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.15em; margin-top: -1rem; }
+  .pw-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 2rem; width: 320px; display: flex; flex-direction: column; gap: 1rem;
+  }
+  .pw-label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; }
+  .pw-input-row { display: flex; gap: 0.5rem; }
+  .pw-input {
+    flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: 'DM Mono', monospace; font-size: 1rem;
+    padding: 0.7rem 1rem; outline: none; transition: border-color 0.2s; letter-spacing: 0.1em;
+  }
+  .pw-input:focus { border-color: var(--accent); }
+  .pw-input.error { border-color: var(--danger); animation: shake 0.3s ease; }
+  .pw-btn {
+    background: var(--accent); color: var(--bg); border: none; border-radius: 6px;
+    font-family: 'DM Mono', monospace; font-size: 0.75rem; text-transform: uppercase;
+    letter-spacing: 0.08em; font-weight: 500; padding: 0.7rem 1.2rem; cursor: pointer;
+    transition: background 0.2s;
+  }
+  .pw-btn:hover { background: #f0d060; }
+  .pw-error { font-size: 0.7rem; color: var(--danger); min-height: 1em; text-align: center; }
+  .pw-hint { font-size: 0.62rem; color: var(--muted); text-align: center; line-height: 1.5; }
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    25%      { transform: translateX(-6px); }
+    75%      { transform: translateX(6px); }
+  }
+</style>
+</head>
+<body>
+
+<!-- Password Screen -->
+<div class="pw-screen" id="pw-screen">
+  <div class="pw-logo">BoxTrack</div>
+  <div class="pw-sub">Storage Manager</div>
+  <div class="pw-box">
+    <div class="pw-label">Enter Password to Continue</div>
+    <div class="pw-input-row">
+      <input class="pw-input" type="password" id="pw-input" placeholder="Password"
+        onkeydown="if(event.key==='Enter') checkPassword()">
+      <button class="pw-btn" onclick="checkPassword()">Go</button>
+    </div>
+    <div class="pw-error" id="pw-error"></div>
+    <div class="pw-hint">Your data is protected.<br>Password is required each session.</div>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-msg" id="loading-msg">Connecting to Google Sheets…</div>
+</div>
+
+<header>
+  <div class="header-left">
+    <h1>BoxTrack</h1>
+    <span class="sub">Storage Manager</span>
+  </div>
+  <div class="sync-bar">
+    <div class="sync-dot" id="sync-dot"></div>
+    <span id="sync-label">Not synced</span>
+    <button class="btn btn-outline" style="padding:0.3rem 0.8rem;font-size:0.65rem" onclick="loadFromCloud()">↺ Refresh</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="stats">
+    <div class="stat"><div class="stat-val" id="stat-items">0</div><div class="stat-label">Total Items</div></div>
+    <div class="stat"><div class="stat-val" id="stat-boxes">0</div><div class="stat-label">Boxes Used</div></div>
+    <div class="stat"><div class="stat-val" id="stat-locs">0</div><div class="stat-label">Locations</div></div>
+  </div>
+
+  <div class="layout">
+    <!-- ADD ITEM PANEL -->
+    <div>
+      <div class="panel">
+        <div class="panel-title">Add / Edit Item</div>
+        <input type="hidden" id="edit-id">
+
+        <!-- VOICE WIZARD -->
+        <div id="voice-wizard">
+          <div class="wizard-steps">
+            <div class="wizard-step" id="wstep-1">
+              <div class="wstep-num active" id="wnum-1">1</div>
+              <div class="wstep-label">Item</div>
+            </div>
+            <div class="wizard-connector" id="wconn-1"></div>
+            <div class="wizard-step" id="wstep-2">
+              <div class="wstep-num" id="wnum-2">2</div>
+              <div class="wstep-label">Box</div>
+            </div>
+            <div class="wizard-connector" id="wconn-2"></div>
+            <div class="wizard-step" id="wstep-3">
+              <div class="wstep-num" id="wnum-3">3</div>
+              <div class="wstep-label">Location</div>
+            </div>
+            <div class="wizard-connector" id="wconn-3"></div>
+            <div class="wizard-step" id="wstep-4">
+              <div class="wstep-num" id="wnum-4">4</div>
+              <div class="wstep-label">Notes</div>
+            </div>
+          </div>
+
+          <div class="wizard-prompt" id="wizard-prompt">
+            <div class="wizard-prompt-label" id="wizard-prompt-label">Step 1 — What is the item?</div>
+            <div class="wizard-prompt-hint" id="wizard-prompt-hint">e.g. "Winter jacket" or "Christmas decorations"</div>
+          </div>
+
+          <button class="voice-full-btn" id="voice-full-btn">
+            <span>🎤</span>
+            <span id="voice-full-label">Start Voice Entry</span>
+          </button>
+          <div class="voice-feedback" id="voice-full-feedback">Press the button above to begin step-by-step voice entry</div>
+        </div>
+
+        <div class="divider">or fill in manually</div>
+
+        <div class="field">
+          <label>Item Name</label>
+          <div class="input-row">
+            <input type="text" id="f-item" placeholder="e.g. Winter Jacket">
+            <button class="voice-btn" id="voice-item">🎤</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Box Number</label>
+          <div class="input-row">
+            <input type="text" id="f-box" placeholder="e.g. 12" oninput="autoFillLocation(this.value)">
+            <button class="voice-btn" id="voice-box">🎤</button>
+          </div>
+          <div style="margin-top:0.4rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+            <button type="button" onclick="assignNewBox()"
+              style="font-family:'DM Mono',monospace;font-size:0.62rem;text-transform:uppercase;letter-spacing:0.08em;
+                     background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--muted);
+                     padding:0.25rem 0.6rem;cursor:pointer;transition:all 0.2s"
+              onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+              onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+              ＋ New Box
+            </button>
+            <button type="button" onclick="setSeparateItem()" id="sep-btn"
+              style="font-family:'DM Mono',monospace;font-size:0.62rem;text-transform:uppercase;letter-spacing:0.08em;
+                     background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--muted);
+                     padding:0.25rem 0.6rem;cursor:pointer;transition:all 0.2s"
+              onmouseover="this.style.borderColor='var(--accent2)';this.style.color='var(--accent2)'"
+              onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+              ☐ Separate Item
+            </button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Location</label>
+          <div class="input-row">
+            <input type="text" id="f-loc" placeholder="e.g. Garage, Attic, Unit 3B">
+            <button class="voice-btn" id="voice-loc">🎤</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Notes (optional)</label>
+          <div class="input-row"><input type="text" id="f-notes" placeholder="e.g. Fragile, top shelf"><button class="voice-btn" id="voice-notes">🎤</button></div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="saveItem()">Save Item</button>
+          <button class="btn btn-outline" onclick="clearForm()">Clear</button>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:1rem;">
+        <div class="panel-title">Export</div>
+        <button class="btn btn-success" style="width:100%" onclick="exportExcel()">⬇ Download Excel Spreadsheet</button>
+      </div>
+    </div>
+
+    <!-- ITEMS LIST PANEL -->
+    <div class="panel">
+      <div class="panel-title">Stored Items</div>
+      <div class="search-bar">
+        <input type="text" id="search-input" placeholder="Search items, boxes, locations…" oninput="renderTable()">
+        <button class="voice-btn" id="voice-search-btn">🎤</button>
+        <button class="voice-btn" onclick="clearSearch()" title="Clear search" style="color:var(--muted)" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--muted)'">✕</button>
+      </div>
+      <div class="voice-search-status" id="voice-search-status">Tap 🎤 to search by voice</div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortBy('item')">Item ↕</th>
+              <th onclick="sortBy('box')">Box ↕</th>
+              <th onclick="sortBy('location')">Location ↕</th>
+              <th>Notes</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="items-tbody"></tbody>
+        </table>
+        <div id="empty-state" class="empty-state" style="display:none">
+          <div class="big">📦</div>
+          <div>No items yet. Add your first item!</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyx6YJZzk0Ht5CyooLztkft7k4Xb4tLyBoszD8YoAoIVvsWzzUoDsBZo6GhlweYqCGEvg/exec';
+const SECRET_TOKEN = 'c1a480365488ae9605cf49bcce89ceb1ca97ad67675fb53ebd4ae529231e33c6';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let items = [];
+let sortField = 'item', sortAsc = true;
+let saveTimer = null;
+
+// ── Cloud Sync ────────────────────────────────────────────────────────────────
+function setSyncState(state, msg) {
+  const dot = document.getElementById('sync-dot');
+  const lbl = document.getElementById('sync-label');
+  dot.className = 'sync-dot ' + state;
+  lbl.textContent = msg;
+}
+
+async function loadFromCloud() {
+  setSyncState('syncing', 'Loading…');
+  document.getElementById('loading-msg').textContent = 'Loading from Google Sheets…';
+  document.getElementById('loading-overlay').classList.remove('hidden');
+
+  try {
+    const res = await fetch(SCRIPT_URL + '?action=load&token=' + SECRET_TOKEN);
+    const data = await res.json();
+    if (data.status === 'ok') {
+      items = data.items || [];
+      renderTable();
+      updateStats();
+      setSyncState('ok', 'Synced with Google Sheets · ' + new Date().toLocaleTimeString());
+    } else {
+      throw new Error('Bad response');
+    }
+  } catch(e) {
+    setSyncState('error', 'Could not connect — working offline');
+    showToast('Could not reach Google Sheets. Check your connection.', true);
+    try {
+      const local = localStorage.getItem('boxtrack_items');
+      if (local) { items = JSON.parse(local); renderTable(); updateStats(); }
+    } catch(_) {}
+  }
+
+  document.getElementById('loading-overlay').classList.add('hidden');
+}
+
+async function saveToCloud() {
+  setSyncState('syncing', 'Saving…');
+  try { localStorage.setItem('boxtrack_items', JSON.stringify(items)); } catch(_) {}
+
+  try {
+    const payload = encodeURIComponent(JSON.stringify(items));
+    const res = await fetch(SCRIPT_URL + '?action=save&items=' + payload + '&token=' + SECRET_TOKEN);
+    const data = await res.json();
+    if (data.status === 'ok') {
+      setSyncState('ok', 'Saved to Google Sheets · ' + new Date().toLocaleTimeString());
+    } else {
+      throw new Error('Bad response');
+    }
+  } catch(e) {
+    setSyncState('error', 'Saved locally only — cloud sync failed');
+    showToast('Cloud save failed. Data saved locally as backup.', true);
+  }
+}
+
+// Debounce saves so rapid edits don't spam the API
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveToCloud, 800);
+}
+
+// ── Voice Parsing ─────────────────────────────────────────────────────────────
+function normaliseNumbers(text) {
+  const w = {one:'1',two:'2',three:'3',four:'4',five:'5',six:'6',seven:'7',eight:'8',nine:'9',
+    ten:'10',eleven:'11',twelve:'12',thirteen:'13',fourteen:'14',fifteen:'15',sixteen:'16',
+    seventeen:'17',eighteen:'18',nineteen:'19',twenty:'20',thirty:'30',forty:'40',fifty:'50'};
+  let t = text.toLowerCase();
+  t = t.replace(/\b(twenty|thirty|forty|fifty)[\s-](one|two|three|four|five|six|seven|eight|nine)\b/g,
+    (m,a,b) => (parseInt(w[a])+parseInt(w[b])).toString());
+  Object.entries(w).forEach(([word,num]) => { t = t.replace(new RegExp('\\b'+word+'\\b','g'), num); });
+  return t;
+}
+
+function parseVoiceEntry(raw) {
+  const t = normaliseNumbers(raw);
+  let item='', box='', location='';
+  let m;
+
+  m = t.match(/^(.+?)\s+(?:in\s+)?box\s+(?:number\s+)?(\d+)\s+(?:in\s+|at\s+|located\s+(?:in\s+|at\s+)?|stored\s+(?:in\s+|at\s+)?)?(.+)$/i);
+  if (m) { item=m[1]; box=m[2]; location=m[3]; }
+
+  if (!item) { m = t.match(/^(.+?),\s*box\s+(?:number\s+)?(\d+),\s*(.+)$/i); if(m){item=m[1];box=m[2];location=m[3];} }
+  if (!item) { m = t.match(/^(.+?),\s*(\d+),\s*(.+)$/i); if(m){item=m[1];box=m[2];location=m[3];} }
+  if (!item) { m = t.match(/^(.+?)\s+box\s+(\d+)\s+(.+)$/i); if(m){item=m[1];box=m[2];location=m[3];} }
+
+  const clean = s => s ? s.replace(/^(put|store|add|place|save|keeping?)\s+/i,'').replace(/^(the|a|an)\s+/i,'').replace(/[.,]+$/,'').trim() : '';
+  const cap   = s => s ? s.charAt(0).toUpperCase()+s.slice(1) : '';
+
+  // Detect "separate item" spoken for box field
+  if (!box) {
+    const sepMatch = t.match(/\b(separate\s+item|not\s+in\s+a?\s*box|standalone|no\s+box)\b/i);
+    if (sepMatch) box = 'Separate Item';
+  }
+
+  // Detect "new box" spoken — will be resolved to next number on parse result use
+  if (!box) {
+    const newBoxMatch = t.match(/\b(new\s+box|next\s+box)\b/i);
+    if (newBoxMatch) box = 'NEW_BOX';
+  }
+
+  return { item: cap(clean(item)), box: box.trim(), location: cap(clean(location)) };
+}
+
+// ── Speech Recognition ────────────────────────────────────────────────────────
+const SR_supported = ('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window);
+function makeSR() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const r = new SR(); r.continuous=false; r.interimResults=true; r.lang='en-US'; return r;
+}
+
+function setupFieldVoice(btnId, inputId) {
+  const btn = document.getElementById(btnId);
+  if (!SR_supported) { btn.disabled=true; btn.style.opacity='0.4'; return; }
+  const rec=makeSR(); let active=false;
+  btn.addEventListener('click', ()=> active ? rec.stop() : rec.start());
+  rec.onstart  = ()=> { active=true;  btn.classList.add('recording'); btn.textContent='⏹'; };
+  rec.onresult = e => {
+    let t = Array.from(e.results).map(r=>r[0].transcript).join('');
+    if (inputId === 'f-box') {
+      if (/\b(new\s+box|next\s+box)\b/i.test(t)) {
+        const next = getNextBoxNumber().toString();
+        document.getElementById('f-box').value = next;
+        showToast('📦 New Box #' + next + ' assigned');
+        return;
+      }
+      autoFillLocation(t);
+    }
+    document.getElementById(inputId).value = t;
+  };
+  rec.onend    = ()=> { active=false; btn.classList.remove('recording'); btn.textContent='🎤'; };
+  rec.onerror  = ()=> { active=false; btn.classList.remove('recording'); btn.textContent='🎤'; };
+}
+
+function setupFullVoice() {
+  const btn = document.getElementById('voice-full-btn');
+  const fb  = document.getElementById('voice-full-feedback');
+  const lbl = document.getElementById('voice-full-label');
+  if (!SR_supported) {
+    btn.disabled=true; btn.style.opacity='0.4';
+    fb.textContent='Voice not supported — use Chrome or Edge.'; return;
+  }
+
+  // Wizard state
+  const steps = [
+    { num: 1, field: 'f-item', prompt: 'Step 1 of 4 — What is the item?',        hint: 'e.g. "Winter jacket" or "Christmas decorations"' },
+    { num: 2, field: 'f-box',  prompt: 'Step 2 of 4 — What is the box number?',  hint: 'Say a number, "new box" for next available, or "separate item"' },
+    { num: 3, field: 'f-loc',  prompt: 'Step 3 of 4 — Where is the box located?', hint: 'e.g. "Garage", "Attic", "Storage unit 3"' },
+    { num: 4, field: 'f-notes',prompt: 'Step 4 of 4 — Any notes? (optional)',    hint: 'e.g. "Fragile", "Top shelf", or say "skip" to finish' },
+  ];
+  let currentStep = 0;
+  let wizardActive = false;
+
+  function setWizardStep(stepIndex) {
+    const s = steps[stepIndex];
+    document.getElementById('wizard-prompt-label').textContent = s.prompt;
+    document.getElementById('wizard-prompt-hint').textContent  = s.hint;
+    document.getElementById('wizard-prompt').classList.add('active');
+    lbl.textContent = '🎙️  Tap to speak…';
+
+    // Update step indicators
+    steps.forEach((st, i) => {
+      const numEl = document.getElementById('wnum-' + st.num);
+      const connEl = document.getElementById('wconn-' + i);
+      if (i < stepIndex) {
+        numEl.className = 'wstep-num done'; numEl.textContent = '';
+        if (connEl) connEl.classList.add('done');
+      } else if (i === stepIndex) {
+        numEl.className = 'wstep-num active'; numEl.textContent = st.num;
+      } else {
+        numEl.className = 'wstep-num'; numEl.textContent = st.num;
+        if (connEl) connEl.classList.remove('done');
+      }
+    });
+  }
+
+  function resetWizard() {
+    currentStep = 0;
+    wizardActive = false;
+    lbl.textContent = 'Start Voice Entry';
+    document.getElementById('wizard-prompt').classList.remove('active');
+    document.getElementById('wizard-prompt-label').textContent = 'Step 1 — What is the item?';
+    document.getElementById('wizard-prompt-hint').textContent  = 'e.g. "Winter jacket" or "Christmas decorations"';
+    steps.forEach(st => {
+      const numEl = document.getElementById('wnum-' + st.num);
+      numEl.className = (st.num === 1) ? 'wstep-num active' : 'wstep-num';
+      numEl.textContent = st.num;
+    });
+    [1,2,3].forEach(i => document.getElementById('wconn-' + i) && document.getElementById('wconn-' + i).classList.remove('done'));
+    fb.textContent = 'Press the button above to begin step-by-step voice entry';
+    fb.className = 'voice-feedback';
+    btn.classList.remove('recording');
+  }
+
+  function listenForStep() {
+    const step = steps[currentStep];
+    const rec = makeSR();
+    let transcript = '';
+
+    btn.classList.add('recording');
+    lbl.textContent = '🔴 Listening… tap to stop';
+    fb.textContent  = '🔴 Listening for: ' + step.prompt.split('—')[1].trim();
+    fb.className    = 'voice-feedback active';
+
+    let stopped = false;
+    btn.onclick = () => { if (!stopped) { stopped=true; rec.stop(); } };
+
+    rec.onresult = e => {
+      transcript = Array.from(e.results).map(r => r[0].transcript).join('');
+      fb.textContent = '🎙️ "' + transcript + '"';
+    };
+
+    rec.onend = () => {
+      btn.classList.remove('recording');
+      if (!transcript) {
+        fb.textContent = 'Nothing heard — tap to try this step again';
+        fb.className = 'voice-feedback';
+        lbl.textContent = '🎙️  Tap to speak…';
+        btn.onclick = () => listenForStep();
+        return;
+      }
+
+      // Process the transcript for this step
+      let value = transcript.trim();
+
+      if (step.field === 'f-box') {
+        if (/\b(new\s+box|next\s+box)\b/i.test(value)) {
+          value = getNextBoxNumber().toString();
+          showToast('📦 New Box #' + value + ' assigned');
+        } else if (/\b(separate\s+item|not\s+in\s+a?\s*box|standalone|no\s+box)\b/i.test(value)) {
+          value = 'Separate Item';
+        } else {
+          // Extract just the number if they said "box 5" or "number 5"
+          const numMatch = value.match(/\d+/);
+          if (numMatch) value = numMatch[0];
+        }
+      }
+
+      if (step.field === 'f-notes' && /\b(skip|no|none|nothing|no notes)\b/i.test(value)) {
+        value = '';
+      }
+
+      // Set the field value
+      document.getElementById(step.field).value = value;
+
+      // Auto-fill location if box was just set
+      if (step.field === 'f-box' && value !== 'Separate Item') {
+        autoFillLocation(value);
+      }
+
+      // Mark step done
+      fb.innerHTML = '✅ ' + step.prompt.split('—')[1].trim() + ': <strong style="color:var(--text)">' + (value || '(skipped)') + '</strong>';
+      fb.className = 'voice-feedback success';
+
+      currentStep++;
+
+      if (currentStep < steps.length) {
+        // Small pause then move to next step
+        setTimeout(() => {
+          setWizardStep(currentStep);
+          setTimeout(() => listenForStep(), 600);
+        }, 900);
+      } else {
+        // All steps done
+        setTimeout(() => {
+          fb.innerHTML = '✅ All done! Review the fields below and click <strong>Save Item</strong>';
+          fb.className = 'voice-feedback success';
+          lbl.textContent = '🔁 Restart Voice Entry';
+          btn.onclick = () => { resetWizard(); };
+          // Mark all steps done
+          steps.forEach((st, i) => {
+            const numEl = document.getElementById('wnum-' + st.num);
+            numEl.className = 'wstep-num done'; numEl.textContent = '';
+            const connEl = document.getElementById('wconn-' + i);
+            if (connEl) connEl.classList.add('done');
+          });
+        }, 800);
+      }
+    };
+
+    rec.onerror = e => {
+      btn.classList.remove('recording');
+      fb.textContent = 'Error: ' + e.error + ' — tap to try again';
+      fb.className = 'voice-feedback';
+      lbl.textContent = '🎙️  Tap to speak…';
+      btn.onclick = () => listenForStep();
+    };
+
+    rec.start();
+  }
+
+  // Initial button click starts the wizard
+  btn.addEventListener('click', () => {
+    if (!wizardActive) {
+      wizardActive = true;
+      currentStep = 0;
+      setWizardStep(0);
+      setTimeout(() => listenForStep(), 300);
+    }
+  });
+}
+
+
+function clearSearch() {
+  const input = document.getElementById('search-input');
+  input.value = '';
+  renderTable();
+  const status = document.getElementById('voice-search-status');
+  status.textContent = 'Tap 🎤 to search by voice';
+  status.className = 'voice-search-status';
+  input.focus();
+}
+
+function setupVoiceSearch() {
+  const btn   =document.getElementById('voice-search-btn');
+  const status=document.getElementById('voice-search-status');
+  if (!SR_supported) { btn.disabled=true; btn.style.opacity='0.4'; return; }
+  const rec=makeSR(); let active=false;
+  btn.addEventListener('click', ()=> active ? rec.stop() : rec.start());
+  rec.onstart  = ()=> { active=true; btn.classList.add('recording'); btn.textContent='⏹'; status.textContent='🔴 Listening…'; status.className='voice-search-status active'; };
+  rec.onresult = e => { const t=Array.from(e.results).map(r=>r[0].transcript).join(''); document.getElementById('search-input').value=t; renderTable(); };
+  rec.onend    = ()=> { active=false; btn.classList.remove('recording'); btn.textContent='🎤'; const q=document.getElementById('search-input').value; status.textContent=q?'Results for: "'+q+'" — clear to reset':'Tap 🎤 to search by voice'; status.className='voice-search-status'; };
+  rec.onerror  = ()=> { active=false; btn.classList.remove('recording'); btn.textContent='🎤'; status.textContent='Error — check mic permissions.'; status.className='voice-search-status'; };
+}
+
+// ── New Box helper ────────────────────────────────────────────────────────────
+function getNextBoxNumber() {
+  const nums = items
+    .map(i => parseInt(i.box))
+    .filter(n => !isNaN(n));
+  return nums.length ? Math.max(...nums) + 1 : 1;
+}
+
+function assignNewBox() {
+  const next = getNextBoxNumber();
+  const boxField = document.getElementById('f-box');
+  boxField.value = next;
+  boxField.style.borderColor = 'var(--accent)';
+  setTimeout(() => boxField.style.borderColor = '', 2000);
+  showToast('📦 New Box #' + next + ' assigned');
+  document.getElementById('f-loc').focus();
+}
+
+// ── Separate Item helper ──────────────────────────────────────────────────────
+function setSeparateItem() {
+  const boxField = document.getElementById('f-box');
+  boxField.value = 'Separate Item';
+  boxField.style.borderColor = 'var(--accent2)';
+  setTimeout(() => boxField.style.borderColor = '', 2000);
+  // Clear location so user can specify where this standalone item is kept
+  const locField = document.getElementById('f-loc');
+  if (!locField.value.trim()) locField.focus();
+}
+
+// ── Auto-fill location from box number ───────────────────────────────────────
+function autoFillLocation(boxVal) {
+  const locField = document.getElementById('f-loc');
+  // Don't auto-fill for separate items or if location already set
+  if (!boxVal.trim() || boxVal.trim().toLowerCase() === 'separate item' || boxVal.trim() === 'NEW_BOX') return;
+  if (locField.value.trim()) return;
+  const match = items.find(i => i.box.trim().toLowerCase() === boxVal.trim().toLowerCase());
+  if (match) {
+    locField.value = match.location;
+    locField.style.borderColor = 'var(--success)';
+    setTimeout(() => locField.style.borderColor = '', 2000);
+    showToast('📦 Location auto-filled from Box ' + boxVal);
+  }
+}
+
+// ── CRUD ──────────────────────────────────────────────────────────────────────
+function saveItem() {
+  const item    =document.getElementById('f-item').value.trim();
+  const box     =document.getElementById('f-box').value.trim();
+  const location=document.getElementById('f-loc').value.trim();
+  const notes   =document.getElementById('f-notes').value.trim();
+  const editId  =document.getElementById('edit-id').value;
+  if (!item||!box||!location) { showToast('Please fill in Item, Box, and Location.'); return; }
+
+  if (editId) {
+    const i=items.findIndex(x=>x.id===editId);
+    if (i>-1) { items[i]={...items[i],item,box,location,notes}; showToast('Item updated!'); }
+  } else {
+    items.push({ id:Date.now().toString(), item, box, location, notes, added:new Date().toISOString() });
+    showToast('Item added!');
+  }
+  scheduleSave(); clearForm(); renderTable(); updateStats();
+}
+
+function editItem(id) {
+  const it=items.find(i=>i.id===id); if(!it) return;
+  document.getElementById('edit-id').value =it.id;
+  document.getElementById('f-item').value  =it.item;
+  document.getElementById('f-box').value   =it.box;
+  document.getElementById('f-loc').value   =it.location;
+  document.getElementById('f-notes').value =it.notes||'';
+  const fb=document.getElementById('voice-full-feedback');
+  fb.textContent='Editing — update fields or re-record voice.'; fb.className='voice-feedback';
+}
+
+function deleteItem(id) {
+  if (!confirm('Delete this item?')) return;
+  items=items.filter(i=>i.id!==id); scheduleSave(); renderTable(); updateStats(); showToast('Deleted.');
+}
+
+function clearForm() {
+  ['edit-id','f-item','f-box','f-loc','f-notes'].forEach(id=>document.getElementById(id).value='');
+  // Reset the voice wizard
+  const btn = document.getElementById('voice-full-btn');
+  const lbl = document.getElementById('voice-full-label');
+  const fb  = document.getElementById('voice-full-feedback');
+  lbl.textContent = 'Start Voice Entry';
+  fb.textContent  = 'Press the button above to begin step-by-step voice entry';
+  fb.className    = 'voice-feedback';
+  document.getElementById('wizard-prompt').classList.remove('active');
+  [1,2,3,4].forEach(n => {
+    const el = document.getElementById('wnum-' + n);
+    if (el) { el.className = n===1 ? 'wstep-num active' : 'wstep-num'; el.textContent = n; }
+  });
+  [1,2,3].forEach(i => { const c=document.getElementById('wconn-'+i); if(c) c.classList.remove('done'); });
+  btn.classList.remove('recording');
+  // Re-attach the start listener by rerunning setup
+  setupFullVoice();
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderTable() {
+  const q=document.getElementById('search-input').value.toLowerCase();
+  let filtered=items.filter(i=>
+    i.item.toLowerCase().includes(q)||i.box.toLowerCase().includes(q)||
+    i.location.toLowerCase().includes(q)||(i.notes||'').toLowerCase().includes(q)
+  );
+  filtered.sort((a,b)=>{
+    if (sortField==='box'){const an=parseFloat(a.box),bn=parseFloat(b.box);if(!isNaN(an)&&!isNaN(bn))return sortAsc?an-bn:bn-an;}
+    const av=(a[sortField]||'').toLowerCase(),bv=(b[sortField]||'').toLowerCase();
+    return sortAsc?av.localeCompare(bv):bv.localeCompare(av);
+  });
+  const tbody=document.getElementById('items-tbody'),empty=document.getElementById('empty-state');
+  if (!filtered.length){tbody.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  tbody.innerHTML=filtered.map(i=>`
+    <tr>
+      <td>${hl(i.item,q)}</td>
+      <td><span class="box-badge${i.box.toLowerCase()==='separate item'?' sep':''}">${i.box.toLowerCase()==='separate item'?'Separate Item':'#'+hl(i.box,q)}</span></td>
+      <td><span class="loc-badge">${hl(i.location,q)}</span></td>
+      <td style="color:var(--muted);font-size:.75rem">${i.notes||'—'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-outline" style="padding:.3rem .6rem;font-size:.65rem" onclick="editItem('${i.id}')">Edit</button>
+        <button class="btn btn-danger" onclick="deleteItem('${i.id}')">✕</button>
+      </td>
+    </tr>`).join('');
+}
+
+function hl(text,q){
+  if(!q)return text;
+  return text.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`,'gi'),
+    '<mark style="background:rgba(232,197,71,0.3);color:var(--text);border-radius:2px">$1</mark>');
+}
+
+function sortBy(f){if(sortField===f)sortAsc=!sortAsc;else{sortField=f;sortAsc=true;}renderTable();}
+
+function updateStats(){
+  document.getElementById('stat-items').textContent=items.length;
+  document.getElementById('stat-boxes').textContent=new Set(items.map(i=>i.box)).size;
+  document.getElementById('stat-locs').textContent =new Set(items.map(i=>i.location)).size;
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+function exportExcel(){
+  if(!items.length){showToast('No items to export.');return;}
+  const data=[['Item Name','Box Number','Location','Notes','Date Added'],
+    ...items.map(i=>[i.item,i.box,i.location,i.notes||'',i.added?new Date(i.added).toLocaleDateString():''])];
+  const ws=XLSX.utils.aoa_to_sheet(data);
+  ws['!cols']=[{wch:30},{wch:12},{wch:22},{wch:30},{wch:15}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Storage Items');
+  const locs={};
+  items.forEach(i=>{if(!locs[i.location])locs[i.location]={};if(!locs[i.location][i.box])locs[i.location][i.box]=0;locs[i.location][i.box]++;});
+  const sum=[['Location','Box','Item Count']];
+  Object.entries(locs).forEach(([l,boxes])=>Object.entries(boxes).forEach(([b,c])=>sum.push([l,b,c])));
+  const ws2=XLSX.utils.aoa_to_sheet(sum);ws2['!cols']=[{wch:22},{wch:12},{wch:12}];
+  XLSX.utils.book_append_sheet(wb,ws2,'Summary');
+  XLSX.writeFile(wb,'BoxTrack_Storage.xlsx');
+  showToast('Excel downloaded!');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg, isError=false){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast'+(isError?' error':'')+' show';
+  setTimeout(()=>t.classList.remove('show'),3200);
+}
+
+// ── Password ──────────────────────────────────────────────────────────────────
+const PW_HASH = 'ca3ab9b5de624f033d2b7186d610d59d74e32c840d203a2034afe5cfd5b334c1';
+
+async function hashString(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function checkPassword() {
+  const val = document.getElementById('pw-input').value;
+  const input = document.getElementById('pw-input');
+  const err   = document.getElementById('pw-error');
+  if (!val) { err.textContent = 'Please enter a password.'; return; }
+  const hash = await hashString(val);
+  if (hash === PW_HASH) {
+    sessionStorage.setItem('boxtrack_auth', '1');
+    document.getElementById('pw-screen').classList.add('hidden');
+    initApp();
+  } else {
+    err.textContent = 'Incorrect password. Please try again.';
+    input.classList.add('error');
+    input.value = '';
+    setTimeout(() => input.classList.remove('error'), 400);
+    input.focus();
+  }
+}
+
+function initApp() {
+  setupFullVoice();
+  setupFieldVoice('voice-item','f-item');
+  setupFieldVoice('voice-box', 'f-box');
+  setupFieldVoice('voice-loc', 'f-loc');
+  setupFieldVoice('voice-notes', 'f-notes');
+  setupVoiceSearch();
+  loadFromCloud();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+// Check if already authenticated this session
+if (sessionStorage.getItem('boxtrack_auth') === '1') {
+  document.getElementById('pw-screen').classList.add('hidden');
+  initApp();
+} else {
+  setTimeout(() => document.getElementById('pw-input').focus(), 100);
+}
+</script>
+</body>
+</html>
