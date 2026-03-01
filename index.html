@@ -465,32 +465,64 @@ async function loadFromCloud() {
 
 async function saveToCloud() {
   setSyncState('syncing', 'Saving…');
-  // Always save to localStorage as backup first
   try { localStorage.setItem('boxtrack_items', JSON.stringify(items)); } catch(_) {}
 
   try {
-    // Use a form-encoded POST which Google Apps Script handles reliably
+    // Try 1: FormData POST
     const formData = new FormData();
     formData.append('action', 'save');
     formData.append('token', SECRET_TOKEN);
     formData.append('items', JSON.stringify(items));
 
-    const res = await fetch(SCRIPT_URL, {
+    console.log('Attempting FormData POST to:', SCRIPT_URL);
+    console.log('Items to save:', items.length);
+
+    let res = await fetch(SCRIPT_URL, {
       method: 'POST',
       body: formData,
       redirect: 'follow'
     });
+
+    console.log('Response status:', res.status, res.type);
     const text = await res.text();
-    const data = JSON.parse(text);
+    console.log('Response text:', text.substring(0, 300));
+
+    let data;
+    try { data = JSON.parse(text); } catch(pe) {
+      console.error('JSON parse error:', pe, 'Raw text:', text.substring(0, 200));
+      throw new Error('Could not parse response: ' + text.substring(0, 100));
+    }
+
     if (data.status === 'ok') {
       setSyncState('ok', 'Saved to Google Sheets · ' + new Date().toLocaleTimeString());
+      showToast('✅ Saved to Google Sheets!');
     } else {
-      throw new Error(data.message || 'Bad response');
+      throw new Error(data.message || 'Bad response: ' + JSON.stringify(data));
     }
   } catch(e) {
-    console.error('Save error:', e);
-    setSyncState('error', 'Saved locally only — cloud sync failed');
-    showToast('Cloud save failed. Data saved locally as backup.', true);
+    console.error('Save error full details:', e.message, e);
+
+    // Try 2: Fallback to GET with URL params (for smaller datasets)
+    try {
+      console.log('Trying GET fallback...');
+      const payload = encodeURIComponent(JSON.stringify(items));
+      const url = SCRIPT_URL + '?action=save&token=' + SECRET_TOKEN + '&items=' + payload;
+      console.log('GET URL length:', url.length);
+      const res2 = await fetch(url, { redirect: 'follow' });
+      const text2 = await res2.text();
+      console.log('GET fallback response:', text2.substring(0, 200));
+      const data2 = JSON.parse(text2);
+      if (data2.status === 'ok') {
+        setSyncState('ok', 'Saved (via GET) · ' + new Date().toLocaleTimeString());
+        showToast('✅ Saved to Google Sheets!');
+        return;
+      }
+    } catch(e2) {
+      console.error('GET fallback also failed:', e2.message);
+    }
+
+    setSyncState('error', 'Save failed: ' + e.message.substring(0, 40));
+    showToast('Save failed: ' + e.message.substring(0, 60), true);
   }
 }
 
