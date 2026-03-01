@@ -686,20 +686,14 @@ function setupFullVoice() {
           setTimeout(() => listenForStep(), 600);
         }, 900);
       } else {
-        // All steps done
-        setTimeout(() => {
-          fb.innerHTML = '✅ All done! Review the fields below and click <strong>Save Item</strong>';
-          fb.className = 'voice-feedback success';
-          lbl.textContent = '🔁 Restart Voice Entry';
-          btn.onclick = () => { resetWizard(); };
-          // Mark all steps done
-          steps.forEach((st, i) => {
-            const numEl = document.getElementById('wnum-' + st.num);
-            numEl.className = 'wstep-num done'; numEl.textContent = '';
-            const connEl = document.getElementById('wconn-' + i);
-            if (connEl) connEl.classList.add('done');
-          });
-        }, 800);
+        // All steps done — mark all indicators complete then ask for confirmation
+        steps.forEach((st, i) => {
+          const numEl = document.getElementById('wnum-' + st.num);
+          numEl.className = 'wstep-num done'; numEl.textContent = '';
+          const connEl = document.getElementById('wconn-' + i);
+          if (connEl) connEl.classList.add('done');
+        });
+        setTimeout(() => listenForConfirmation(), 800);
       }
     };
 
@@ -709,6 +703,78 @@ function setupFullVoice() {
       fb.className = 'voice-feedback';
       lbl.textContent = '🎙️  Tap to speak…';
       btn.onclick = () => listenForStep();
+    };
+
+    rec.start();
+  }
+
+  // ── Verbal confirmation after all steps complete ────────────────────────────
+  function listenForConfirmation() {
+    const item     = document.getElementById('f-item').value || '(none)';
+    const box      = document.getElementById('f-box').value  || '(none)';
+    const location = document.getElementById('f-loc').value  || '(none)';
+    const notes    = document.getElementById('f-notes').value;
+
+    // Build summary for display
+    const summary = `Item: ${item} · Box: ${box} · Location: ${location}` + (notes ? ` · Notes: ${notes}` : '');
+
+    document.getElementById('wizard-prompt-label').textContent = 'Confirm — say "Save" or "Reject"';
+    document.getElementById('wizard-prompt-hint').textContent  = summary;
+    document.getElementById('wizard-prompt').classList.add('active');
+
+    fb.innerHTML = `🎤 Ready to confirm:<br><strong style="color:var(--text);font-size:0.8rem">${summary}</strong><br><span style="color:var(--muted);font-size:0.68rem">Say <strong style="color:var(--success)">"Save"</strong> to store or <strong style="color:var(--danger)">"Reject"</strong> to discard</span>`;
+    fb.className = 'voice-feedback';
+    lbl.textContent = '🎤 Say Save or Reject…';
+    btn.classList.add('recording');
+
+    const rec = makeSR();
+    let confirmed = false;
+
+    btn.onclick = () => { rec.stop(); };
+
+    rec.onresult = e => {
+      const t = Array.from(e.results).map(r => r[0].transcript).join('').toLowerCase().trim();
+      if (/(save|yes|confirm|ok|okay|store|keep)/.test(t)) {
+        confirmed = true;
+        rec.stop();
+      } else if (/(reject|no|cancel|discard|delete|clear|redo|start over)/.test(t)) {
+        confirmed = false;
+        rec.stop();
+      }
+    };
+
+    rec.onend = () => {
+      btn.classList.remove('recording');
+      if (confirmed === true) {
+        // Save the item
+        saveItem();
+        fb.innerHTML = '✅ <strong style="color:var(--success)">Item saved!</strong> Voice entry complete.';
+        fb.className = 'voice-feedback success';
+        lbl.textContent = '🔁 Start Voice Entry';
+        document.getElementById('wizard-prompt-label').textContent = 'Step 1 — What is the item?';
+        document.getElementById('wizard-prompt-hint').textContent  = 'e.g. "Winter jacket" or "Christmas decorations"';
+        setTimeout(() => resetWizard(), 2000);
+      } else if (confirmed === false) {
+        // Reject — clear form and reset
+        clearForm();
+        fb.innerHTML = '❌ <strong style="color:var(--danger)">Entry rejected.</strong> All fields cleared.';
+        fb.className = 'voice-feedback';
+        lbl.textContent = '🔁 Start Voice Entry';
+        setTimeout(() => resetWizard(), 1500);
+      } else {
+        // Nothing recognised — ask again
+        fb.innerHTML = '⚠ Didn’t catch that. Say <strong style="color:var(--success)">Save</strong> or <strong style="color:var(--danger)">Reject</strong>';
+        fb.className = 'voice-feedback';
+        lbl.textContent = '🎤 Tap to confirm…';
+        btn.onclick = () => listenForConfirmation();
+      }
+    };
+
+    rec.onerror = () => {
+      btn.classList.remove('recording');
+      fb.textContent = 'Error — tap to try confirmation again';
+      fb.className = 'voice-feedback';
+      btn.onclick = () => listenForConfirmation();
     };
 
     rec.start();
