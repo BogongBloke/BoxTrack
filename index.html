@@ -757,94 +757,93 @@ function setupFullVoice() {
 
   // ── Verbal confirmation after all steps complete ────────────────────────────
   function listenForConfirmation() {
-    const item     = document.getElementById('f-item').value || '(none)';
-    const box      = document.getElementById('f-box').value  || '(none)';
-    const location = document.getElementById('f-loc').value  || '(none)';
-    const notes    = document.getElementById('f-notes').value;
+    // Capture field values RIGHT NOW before anything can change them
+    const capturedItem     = document.getElementById('f-item').value.trim();
+    const capturedBox      = document.getElementById('f-box').value.trim();
+    const capturedLocation = document.getElementById('f-loc').value.trim();
+    const capturedNotes    = document.getElementById('f-notes').value.trim();
+    const capturedEditId   = document.getElementById('edit-id').value;
 
-    // Build summary for display
-    const summary = `Item: ${item} · Box: ${box} · Location: ${location}` + (notes ? ` · Notes: ${notes}` : '');
+    const summary = 'Item: ' + capturedItem + ' · Box: ' + capturedBox + ' · Location: ' + capturedLocation + (capturedNotes ? ' · Notes: ' + capturedNotes : '');
 
     document.getElementById('wizard-prompt-label').textContent = 'Confirm — say "Save" or "Reject"';
     document.getElementById('wizard-prompt-hint').textContent  = summary;
     document.getElementById('wizard-prompt').classList.add('active');
 
-    fb.innerHTML = `🎤 Ready to confirm:<br><strong style="color:var(--text);font-size:0.8rem">${summary}</strong><br><span style="color:var(--muted);font-size:0.68rem">Say <strong style="color:var(--success)">"Save"</strong> to store or <strong style="color:var(--danger)">"Reject"</strong> to discard</span>`;
+    fb.innerHTML = '🎤 Ready to confirm:<br><strong style="color:var(--text);font-size:0.8rem">' + summary + '</strong><br><span style="color:var(--muted);font-size:0.68rem">Say <strong style="color:var(--success)">Save</strong> to store or <strong style="color:var(--danger)">Reject</strong> to discard</span>';
     fb.className = 'voice-feedback';
     lbl.textContent = '🎤 Say Save or Reject…';
     btn.classList.add('recording');
 
     const rec = makeSR();
-    let confirmed = null; // null=undecided, true=save, false=reject
+    rec.interimResults = false; // Only use FINAL results
+    let decision = null;
+
     btn.onclick = () => { rec.stop(); };
 
     rec.onresult = e => {
-      const t = Array.from(e.results).map(r => r[0].transcript).join('').toLowerCase().trim();
-      console.log('Confirmation heard:', t);
-      if (t.includes('save') || t.includes('yes') || t.includes('confirm') || t.includes('ok') || t.includes('store') || t.includes('keep')) {
-        confirmed = true; rec.stop();
-      } else if (t.includes('reject') || t.includes('no') || t.includes('cancel') || t.includes('discard') || t.includes('redo')) {
-        confirmed = false; rec.stop();
+      const t = e.results[e.results.length - 1][0].transcript.toLowerCase().trim();
+      console.log('Confirmation transcript:', JSON.stringify(t));
+      fb.textContent = 'Heard: "' + t + '"';
+
+      if (t.indexOf('save') !== -1 || t.indexOf('yes') !== -1 ||
+          t.indexOf('confirm') !== -1 || t.indexOf('store') !== -1 ||
+          t.indexOf('keep') !== -1 || t.indexOf('ok') !== -1) {
+        decision = 'save';
+      } else if (t.indexOf('reject') !== -1 || t.indexOf('cancel') !== -1 ||
+                 t.indexOf('discard') !== -1 || t.indexOf('redo') !== -1) {
+        decision = 'reject';
       }
     };
 
     rec.onend = () => {
       btn.classList.remove('recording');
-      if (confirmed === true) {
-        // Grab field values BEFORE anything clears them
-        const itemVal     = document.getElementById('f-item').value.trim();
-        const boxVal      = document.getElementById('f-box').value.trim();
-        const locationVal = document.getElementById('f-loc').value.trim();
-        const notesVal    = document.getElementById('f-notes').value.trim();
-        const editId      = document.getElementById('edit-id').value;
+      console.log('Confirmation decision:', decision, 'captured item:', capturedItem);
 
-        if (!itemVal || !boxVal || !locationVal) {
-          fb.innerHTML = '⚠ Missing required fields. Please check Item, Box and Location.';
+      if (decision === 'save') {
+        if (!capturedItem || !capturedBox || !capturedLocation) {
+          fb.innerHTML = '⚠ Missing required fields — Item, Box and Location are required.';
           fb.className = 'voice-feedback';
+          btn.onclick = () => listenForConfirmation();
           return;
         }
-
-        // Save directly to items array — bypasses clearForm() inside saveItem()
-        if (editId) {
-          const idx = items.findIndex(x => x.id === editId);
-          if (idx > -1) items[idx] = { ...items[idx], item: itemVal, box: boxVal, location: locationVal, notes: notesVal };
+        // Save using already-captured values
+        if (capturedEditId) {
+          const idx = items.findIndex(x => x.id === capturedEditId);
+          if (idx > -1) items[idx] = { ...items[idx], item: capturedItem, box: capturedBox, location: capturedLocation, notes: capturedNotes };
         } else {
-          items.push({ id: Date.now().toString(), item: itemVal, box: boxVal, location: locationVal, notes: notesVal, added: new Date().toISOString() });
+          items.push({ id: Date.now().toString(), item: capturedItem, box: capturedBox, location: capturedLocation, notes: capturedNotes, added: new Date().toISOString() });
         }
-
         scheduleSave();
         renderTable();
         updateStats();
-
-        fb.innerHTML = '✅ <strong style="color:var(--success)">Item saved!</strong> ' + itemVal + ' → Box ' + boxVal;
+        fb.innerHTML = '✅ <strong style="color:var(--success)">Saved!</strong> ' + capturedItem + ' → Box ' + capturedBox;
         fb.className = 'voice-feedback success';
         lbl.textContent = '🔁 Start Voice Entry';
-
-        // Clear the form fields and reset wizard after a short delay
         setTimeout(() => {
           ['edit-id','f-item','f-box','f-loc','f-notes'].forEach(id => document.getElementById(id).value = '');
           resetWizard();
         }, 2000);
 
-      } else if (confirmed === false) {
-        // Reject — clear fields and reset wizard
+      } else if (decision === 'reject') {
         ['edit-id','f-item','f-box','f-loc','f-notes'].forEach(id => document.getElementById(id).value = '');
-        fb.innerHTML = '❌ <strong style="color:var(--danger)">Entry rejected.</strong> All fields cleared.';
+        fb.innerHTML = '❌ <strong style="color:var(--danger)">Rejected.</strong> All fields cleared.';
         fb.className = 'voice-feedback';
         lbl.textContent = '🔁 Start Voice Entry';
         setTimeout(() => resetWizard(), 1500);
+
       } else {
-        // Nothing recognised — ask again
-        fb.innerHTML = `⚠ Didn’t catch that. Say <strong style="color:var(--success)">Save</strong> or <strong style="color:var(--danger)">Reject</strong>`;
+        // Nothing recognised — show what was heard and ask again
+        fb.innerHTML = '⚠ Not recognised. Tap the button and clearly say <strong style="color:var(--success)">Save</strong> or <strong style="color:var(--danger)">Reject</strong>';
         fb.className = 'voice-feedback';
-        lbl.textContent = '🎤 Tap to confirm…';
+        lbl.textContent = '🎤 Tap to try again';
         btn.onclick = () => listenForConfirmation();
       }
     };
 
-    rec.onerror = () => {
+    rec.onerror = e => {
       btn.classList.remove('recording');
-      fb.textContent = 'Error — tap to try confirmation again';
+      fb.textContent = 'Mic error: ' + e.error + ' — tap to try again';
       fb.className = 'voice-feedback';
       btn.onclick = () => listenForConfirmation();
     };
@@ -852,7 +851,7 @@ function setupFullVoice() {
     rec.start();
   }
 
-  // Initial button click starts the wizard
+    // Initial button click starts the wizard
   btn.addEventListener('click', () => {
     if (!wizardActive) {
       wizardActive = true;
