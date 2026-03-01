@@ -158,7 +158,8 @@
   .voice-search-status { font-size: 0.68rem; color: var(--muted); margin-bottom: 0.8rem; min-height: 1em; font-style: italic; }
   .voice-search-status.active { color: var(--danger); font-style: normal; }
 
-  .table-wrap { overflow-x: auto; overflow-y: auto; margin-top: 0.6rem; max-height: 520px; }
+  .table-wrap { overflow-x: auto; overflow-y: auto; margin-top: 0.6rem; max-height: 840px; border: 1px solid var(--border); border-radius: 6px; }
+  .table-wrap thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
   table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
   thead th { text-align: left; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; }
   thead th:hover { color: var(--accent); }
@@ -382,7 +383,35 @@
 
     <!-- ITEMS LIST PANEL -->
     <div class="panel">
-      <div class="panel-title">Stored Items</div>
+      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">
+        <span>Stored Items</span>
+        <div style="display:flex;gap:0.4rem">
+          <button id="sort-newest" onclick="sortBy('added')"
+            style="font-family:'DM Mono',monospace;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;
+                   background:rgba(232,197,71,0.15);border:1px solid var(--accent);border-radius:4px;
+                   color:var(--accent);padding:0.2rem 0.6rem;cursor:pointer">
+            ★ Newest First
+          </button>
+          <button id="sort-item" onclick="sortBy('item')"
+            style="font-family:'DM Mono',monospace;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;
+                   background:transparent;border:1px solid var(--border);border-radius:4px;
+                   color:var(--muted);padding:0.2rem 0.6rem;cursor:pointer">
+            A–Z Item
+          </button>
+          <button id="sort-box" onclick="sortBy('box')"
+            style="font-family:'DM Mono',monospace;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;
+                   background:transparent;border:1px solid var(--border);border-radius:4px;
+                   color:var(--muted);padding:0.2rem 0.6rem;cursor:pointer">
+            Box #
+          </button>
+          <button id="sort-location" onclick="sortBy('location')"
+            style="font-family:'DM Mono',monospace;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;
+                   background:transparent;border:1px solid var(--border);border-radius:4px;
+                   color:var(--muted);padding:0.2rem 0.6rem;cursor:pointer">
+            Location
+          </button>
+        </div>
+      </div>
       <div class="search-bar">
         <input type="text" id="search-input" placeholder="Search items, boxes, locations…" oninput="renderTable()">
         <button class="voice-btn" id="voice-search-btn">🎤</button>
@@ -421,7 +450,7 @@ const SECRET_TOKEN = 'c1a480365488ae9605cf49bcce89ceb1ca97ad67675fb53ebd4ae52923
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let items = [];
-let sortField = 'item', sortAsc = true, userHasSorted = false;
+let sortField = 'added', sortAsc = true;
 let saveTimer = null;
 
 // ── Cloud Sync ────────────────────────────────────────────────────────────────
@@ -992,11 +1021,9 @@ function renderTable() {
     i.location.toLowerCase().includes(q)||(i.notes||'').toLowerCase().includes(q)
   );
   filtered.sort((a,b)=>{
-    // Default sort: newest first (by added timestamp)
-    if (sortField==='added' || sortField==='item') {
-      if (sortField==='added') return sortAsc ? new Date(b.added)-new Date(a.added) : new Date(a.added)-new Date(b.added);
-      // If user hasn't manually sorted, show newest first
-      if (!userHasSorted) return new Date(b.added) - new Date(a.added);
+    if (sortField==='added') {
+      const ad = new Date(a.added||0), bd = new Date(b.added||0);
+      return sortAsc ? bd - ad : ad - bd;
     }
     if (sortField==='box'){const an=parseFloat(a.box),bn=parseFloat(b.box);if(!isNaN(an)&&!isNaN(bn))return sortAsc?an-bn:bn-an;}
     const av=(a[sortField]||'').toLowerCase(),bv=(b[sortField]||'').toLowerCase();
@@ -1024,7 +1051,24 @@ function hl(text,q){
     '<mark style="background:rgba(232,197,71,0.3);color:var(--text);border-radius:2px">$1</mark>');
 }
 
-function sortBy(f){userHasSorted=true;if(sortField===f)sortAsc=!sortAsc;else{sortField=f;sortAsc=true;}renderTable();}
+function updateSortButtons() {
+  const map = { added:'sort-newest', item:'sort-item', box:'sort-box', location:'sort-location' };
+  Object.entries(map).forEach(([field, id]) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    if (field === sortField) {
+      btn.style.background = 'rgba(232,197,71,0.15)';
+      btn.style.borderColor = 'var(--accent)';
+      btn.style.color = 'var(--accent)';
+    } else {
+      btn.style.background = 'transparent';
+      btn.style.borderColor = 'var(--border)';
+      btn.style.color = 'var(--muted)';
+    }
+  });
+}
+
+function sortBy(f){if(sortField===f)sortAsc=!sortAsc;else{sortField=f;sortAsc=true;}updateSortButtons();renderTable();}
 
 function updateStats(){
   document.getElementById('stat-items').textContent=items.length;
