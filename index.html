@@ -775,18 +775,16 @@ function setupFullVoice() {
     btn.classList.add('recording');
 
     const rec = makeSR();
-    let confirmed = false;
-
+    let confirmed = null; // null=undecided, true=save, false=reject
     btn.onclick = () => { rec.stop(); };
 
     rec.onresult = e => {
       const t = Array.from(e.results).map(r => r[0].transcript).join('').toLowerCase().trim();
-      if (/(save|yes|confirm|ok|okay|store|keep)/.test(t)) {
-        confirmed = true;
-        rec.stop();
-      } else if (/(reject|no|cancel|discard|delete|clear|redo|start over)/.test(t)) {
-        confirmed = false;
-        rec.stop();
+      console.log('Confirmation heard:', t);
+      if (t.includes('save') || t.includes('yes') || t.includes('confirm') || t.includes('ok') || t.includes('store') || t.includes('keep')) {
+        confirmed = true; rec.stop();
+      } else if (t.includes('reject') || t.includes('no') || t.includes('cancel') || t.includes('discard') || t.includes('redo')) {
+        confirmed = false; rec.stop();
       }
     };
 
