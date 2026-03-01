@@ -438,17 +438,20 @@ async function loadFromCloud() {
   document.getElementById('loading-overlay').classList.remove('hidden');
 
   try {
-    const res = await fetch(SCRIPT_URL + '?action=load&token=' + SECRET_TOKEN);
-    const data = await res.json();
+    const url = SCRIPT_URL + '?action=load&token=' + SECRET_TOKEN;
+    const res = await fetch(url, { redirect: 'follow' });
+    const text = await res.text();
+    const data = JSON.parse(text);
     if (data.status === 'ok') {
       items = data.items || [];
       renderTable();
       updateStats();
       setSyncState('ok', 'Synced with Google Sheets · ' + new Date().toLocaleTimeString());
     } else {
-      throw new Error('Bad response');
+      throw new Error(data.message || 'Bad response');
     }
   } catch(e) {
+    console.error('Load error:', e);
     setSyncState('error', 'Could not connect — working offline');
     showToast('Could not reach Google Sheets. Check your connection.', true);
     try {
@@ -462,18 +465,30 @@ async function loadFromCloud() {
 
 async function saveToCloud() {
   setSyncState('syncing', 'Saving…');
+  // Always save to localStorage as backup first
   try { localStorage.setItem('boxtrack_items', JSON.stringify(items)); } catch(_) {}
 
   try {
-    const payload = encodeURIComponent(JSON.stringify(items));
-    const res = await fetch(SCRIPT_URL + '?action=save&items=' + payload + '&token=' + SECRET_TOKEN);
-    const data = await res.json();
+    // Use a form-encoded POST which Google Apps Script handles reliably
+    const formData = new FormData();
+    formData.append('action', 'save');
+    formData.append('token', SECRET_TOKEN);
+    formData.append('items', JSON.stringify(items));
+
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      body: formData,
+      redirect: 'follow'
+    });
+    const text = await res.text();
+    const data = JSON.parse(text);
     if (data.status === 'ok') {
       setSyncState('ok', 'Saved to Google Sheets · ' + new Date().toLocaleTimeString());
     } else {
-      throw new Error('Bad response');
+      throw new Error(data.message || 'Bad response');
     }
   } catch(e) {
+    console.error('Save error:', e);
     setSyncState('error', 'Saved locally only — cloud sync failed');
     showToast('Cloud save failed. Data saved locally as backup.', true);
   }
