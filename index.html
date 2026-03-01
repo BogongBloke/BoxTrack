@@ -155,6 +155,22 @@
 
   .search-bar { display: flex; gap: 0.5rem; margin-bottom: 0.4rem; }
   .search-bar input { flex: 1; }
+  .sort-btn {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted);
+    padding: 0.3rem 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .sort-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .sort-btn-active { background: rgba(232,197,71,0.15) !important; border-color: var(--accent) !important; color: var(--accent) !important; }
+
   .voice-search-status { font-size: 0.68rem; color: var(--muted); margin-bottom: 0.8rem; min-height: 1em; font-style: italic; }
   .voice-search-status.active { color: var(--danger); font-style: normal; }
 
@@ -383,34 +399,12 @@
 
     <!-- ITEMS LIST PANEL -->
     <div class="panel">
-      <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">
-        <span>Stored Items</span>
-        <div style="display:flex;gap:0.4rem">
-          <button id="sort-newest" onclick="sortBy('added')"
-            style="font-family:'DM Mono',monospace;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;
-                   background:rgba(232,197,71,0.15);border:1px solid var(--accent);border-radius:4px;
-                   color:var(--accent);padding:0.2rem 0.6rem;cursor:pointer">
-            ★ Newest First
-          </button>
-          <button id="sort-item" onclick="sortBy('item')"
-            style="font-family:'DM Mono',monospace;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;
-                   background:transparent;border:1px solid var(--border);border-radius:4px;
-                   color:var(--muted);padding:0.2rem 0.6rem;cursor:pointer">
-            A–Z Item
-          </button>
-          <button id="sort-box" onclick="sortBy('box')"
-            style="font-family:'DM Mono',monospace;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;
-                   background:transparent;border:1px solid var(--border);border-radius:4px;
-                   color:var(--muted);padding:0.2rem 0.6rem;cursor:pointer">
-            Box #
-          </button>
-          <button id="sort-location" onclick="sortBy('location')"
-            style="font-family:'DM Mono',monospace;font-size:0.6rem;text-transform:uppercase;letter-spacing:0.08em;
-                   background:transparent;border:1px solid var(--border);border-radius:4px;
-                   color:var(--muted);padding:0.2rem 0.6rem;cursor:pointer">
-            Location
-          </button>
-        </div>
+      <div class="panel-title">Stored Items</div>
+      <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.8rem">
+        <button id="sort-newest" onclick="sortBy('added')" class="sort-btn sort-btn-active">★ Newest</button>
+        <button id="sort-item" onclick="sortBy('item')" class="sort-btn">A–Z Item</button>
+        <button id="sort-box" onclick="sortBy('box')" class="sort-btn">Box #</button>
+        <button id="sort-location" onclick="sortBy('location')" class="sort-btn">Location</button>
       </div>
       <div class="search-bar">
         <input type="text" id="search-input" placeholder="Search items, boxes, locations…" oninput="renderTable()">
@@ -1057,13 +1051,9 @@ function updateSortButtons() {
     const btn = document.getElementById(id);
     if (!btn) return;
     if (field === sortField) {
-      btn.style.background = 'rgba(232,197,71,0.15)';
-      btn.style.borderColor = 'var(--accent)';
-      btn.style.color = 'var(--accent)';
+      btn.classList.add('sort-btn-active');
     } else {
-      btn.style.background = 'transparent';
-      btn.style.borderColor = 'var(--border)';
-      btn.style.color = 'var(--muted)';
+      btn.classList.remove('sort-btn-active');
     }
   });
 }
