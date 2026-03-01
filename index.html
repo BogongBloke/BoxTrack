@@ -158,7 +158,7 @@
   .voice-search-status { font-size: 0.68rem; color: var(--muted); margin-bottom: 0.8rem; min-height: 1em; font-style: italic; }
   .voice-search-status.active { color: var(--danger); font-style: normal; }
 
-  .table-wrap { overflow-x: auto; margin-top: 0.6rem; }
+  .table-wrap { overflow-x: auto; overflow-y: auto; margin-top: 0.6rem; max-height: 520px; }
   table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
   thead th { text-align: left; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; }
   thead th:hover { color: var(--accent); }
@@ -421,7 +421,7 @@ const SECRET_TOKEN = 'c1a480365488ae9605cf49bcce89ceb1ca97ad67675fb53ebd4ae52923
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let items = [];
-let sortField = 'item', sortAsc = true;
+let sortField = 'item', sortAsc = true, userHasSorted = false;
 let saveTimer = null;
 
 // ── Cloud Sync ────────────────────────────────────────────────────────────────
@@ -992,6 +992,12 @@ function renderTable() {
     i.location.toLowerCase().includes(q)||(i.notes||'').toLowerCase().includes(q)
   );
   filtered.sort((a,b)=>{
+    // Default sort: newest first (by added timestamp)
+    if (sortField==='added' || sortField==='item') {
+      if (sortField==='added') return sortAsc ? new Date(b.added)-new Date(a.added) : new Date(a.added)-new Date(b.added);
+      // If user hasn't manually sorted, show newest first
+      if (!userHasSorted) return new Date(b.added) - new Date(a.added);
+    }
     if (sortField==='box'){const an=parseFloat(a.box),bn=parseFloat(b.box);if(!isNaN(an)&&!isNaN(bn))return sortAsc?an-bn:bn-an;}
     const av=(a[sortField]||'').toLowerCase(),bv=(b[sortField]||'').toLowerCase();
     return sortAsc?av.localeCompare(bv):bv.localeCompare(av);
@@ -1018,7 +1024,7 @@ function hl(text,q){
     '<mark style="background:rgba(232,197,71,0.3);color:var(--text);border-radius:2px">$1</mark>');
 }
 
-function sortBy(f){if(sortField===f)sortAsc=!sortAsc;else{sortField=f;sortAsc=true;}renderTable();}
+function sortBy(f){userHasSorted=true;if(sortField===f)sortAsc=!sortAsc;else{sortField=f;sortAsc=true;}renderTable();}
 
 function updateStats(){
   document.getElementById('stat-items').textContent=items.length;
