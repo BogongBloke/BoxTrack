@@ -1178,11 +1178,13 @@ function initApp() {
 // ── Tag System ────────────────────────────────────────────────────────────────
 
 function syncTagsToField() {
-  document.getElementById('f-notes').value = activeTags.join(',');
+  const el = document.getElementById('f-notes');
+  if (el) el.value = activeTags.join(',');
 }
 
 function renderTagPills() {
   const container = document.getElementById('tag-pills');
+  if (!container) return;
   container.innerHTML = activeTags.map((t,i) =>
     `<span class="tag-pill">${t}<button type="button" onmousedown="removeTag(${i})">✕</button></span>`
   ).join('');
@@ -1209,8 +1211,9 @@ function addTag(tag) {
 function loadTagsFromValue(val) {
   activeTags = val ? val.split(',').map(t=>t.trim()).filter(Boolean) : [];
   renderTagPills();
-  document.getElementById('tag-input').value = '';
-  filterTagDropdown();
+  const ti = document.getElementById('tag-input');
+  if (ti) ti.value = '';
+  // Don't call filterTagDropdown here — dropdown may not be visible
 }
 
 function showTagDropdown() {
@@ -1223,11 +1226,13 @@ function hideTagDropdown() {
 }
 
 function filterTagDropdown() {
-  const q = document.getElementById('tag-input').value.toLowerCase().trim();
+  const tagInput = document.getElementById('tag-input');
   const dropdown = document.getElementById('tag-dropdown');
+  if (!tagInput || !dropdown) return;
+  const q = tagInput.value.toLowerCase().trim();
 
   // Build list: matching presets + any custom tags already used
-  const allUsed = [...new Set(items.flatMap(i => (i.notes||'').split(',').map(t=>t.trim()).filter(Boolean)))];
+  const allUsed = [...new Set((items||[]).flatMap(i => (i.notes||'').split(',').map(t=>t.trim()).filter(Boolean)))];
   const pool = [...new Set([...PRESET_TAGS, ...allUsed])];
 
   const matches = pool.filter(t => !q || t.toLowerCase().includes(q));
