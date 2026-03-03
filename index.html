@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BoxTrack _ Storage Manager</title>
+<title>BoxTrack — Storage Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,wght@0,300;0,600;1,300&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -251,6 +251,32 @@
     25%      { transform: translateX(-6px); }
     75%      { transform: translateX(6px); }
   }
+
+  /* ── Tags ── */
+  .tag-field { display:flex; flex-wrap:wrap; gap:0.4rem; align-items:center;
+               border:1px solid var(--border); border-radius:6px; padding:0.4rem 0.6rem;
+               background:var(--bg); min-height:2.4rem; cursor:text; transition:border-color 0.2s; }
+  .tag-field:focus-within { border-color:var(--accent); }
+  .tag-pill { display:inline-flex; align-items:center; gap:0.3rem;
+              background:rgba(232,197,71,0.15); border:1px solid rgba(232,197,71,0.4);
+              border-radius:20px; padding:0.15rem 0.6rem; font-size:0.68rem;
+              color:var(--accent); white-space:nowrap; }
+  .tag-pill button { background:none; border:none; color:var(--accent); cursor:pointer;
+                     font-size:0.75rem; padding:0; line-height:1; opacity:0.7; }
+  .tag-pill button:hover { opacity:1; }
+  .tag-input { border:none; outline:none; background:transparent; color:var(--text);
+               font-family:'DM Mono',monospace; font-size:0.75rem; min-width:80px; flex:1; }
+  .tag-dropdown { position:absolute; background:var(--surface); border:1px solid var(--border);
+                  border-radius:6px; z-index:50; max-height:180px; overflow-y:auto;
+                  box-shadow:0 4px 16px rgba(0,0,0,0.3); min-width:160px; }
+  .tag-dropdown-item { padding:0.5rem 0.8rem; font-size:0.72rem; cursor:pointer;
+                       color:var(--text); transition:background 0.15s; }
+  .tag-dropdown-item:hover { background:var(--surface2); color:var(--accent); }
+  .tag-dropdown-item.selected { color:var(--muted); }
+  .tag-badge { display:inline-flex; align-items:center; gap:0.25rem;
+               background:rgba(232,197,71,0.12); border:1px solid rgba(232,197,71,0.3);
+               border-radius:20px; padding:0.1rem 0.5rem; font-size:0.62rem; color:var(--accent); }
+  .tag-wrap { display:flex; flex-wrap:wrap; gap:0.3rem; }
 </style>
 </head>
 <body>
@@ -381,8 +407,16 @@
           </div>
         </div>
         <div class="field">
-          <label>Notes (optional)</label>
-          <div class="input-row"><input type="text" id="f-notes" placeholder="e.g. Fragile, top shelf"><button class="voice-btn" id="voice-notes">🎤</button></div>
+          <label>Tags</label>
+          <div style="position:relative">
+            <div class="tag-field" id="tag-field" onclick="document.getElementById('tag-input').focus()">
+              <div id="tag-pills"></div>
+              <input type="text" id="tag-input" class="tag-input" placeholder="Pick or type a tag…"
+                oninput="filterTagDropdown()" onkeydown="tagKeyDown(event)" onfocus="showTagDropdown()" onblur="hideTagDropdown()">
+            </div>
+            <div class="tag-dropdown" id="tag-dropdown" style="display:none"></div>
+          </div>
+          <input type="hidden" id="f-notes">
         </div>
 
         <div class="btn-row">
@@ -405,6 +439,7 @@
         <button id="sort-item" onclick="sortBy('item')" class="sort-btn">A–Z Item</button>
         <button id="sort-box" onclick="sortBy('box')" class="sort-btn">Box #</button>
         <button id="sort-location" onclick="sortBy('location')" class="sort-btn">Location</button>
+        <button id="sort-notes" onclick="sortBy('notes')" class="sort-btn">Tags</button>
       </div>
       <div class="search-bar">
         <input type="text" id="search-input" placeholder="Search items, boxes, locations…" oninput="renderTable()">
@@ -420,7 +455,7 @@
               <th onclick="sortBy('item')">Item ↕</th>
               <th onclick="sortBy('box')">Box ↕</th>
               <th onclick="sortBy('location')">Location ↕</th>
-              <th>Notes</th>
+              <th onclick="sortBy('notes')" style="cursor:pointer">Tags ↕</th>
               <th></th>
             </tr>
           </thead>
@@ -641,7 +676,7 @@ function setupFullVoice() {
     { num: 1, field: 'f-item', prompt: 'Step 1 of 4 — What is the item?',        hint: 'e.g. "Winter jacket" or "Christmas decorations"' },
     { num: 2, field: 'f-box',  prompt: 'Step 2 of 4 — What is the box number?',  hint: 'Say a number, "new box" for next available, or "separate item"' },
     { num: 3, field: 'f-loc',  prompt: 'Step 3 of 4 — Where is the box located?', hint: 'e.g. "Garage", "Attic", "Storage unit 3"' },
-    { num: 4, field: 'f-notes',prompt: 'Step 4 of 4 — Any notes? (optional)',    hint: 'e.g. "Fragile", "Top shelf", or say "skip" to finish' },
+    { num: 4, field: 'f-tags-voice', prompt: 'Step 4 of 4 — Any tags? (optional)',    hint: 'e.g. "Clothing", "Fragile", or say "skip" to finish' },
   ];
   let currentStep = 0;
   let wizardActive = false;
@@ -736,7 +771,14 @@ function setupFullVoice() {
       }
 
       // Set the field value
-      document.getElementById(step.field).value = value;
+      if (step.field === 'f-tags-voice') {
+        // Split spoken tags by "and" or comma and add each
+        if (value) {
+          value.split(/,|and/i).map(t=>t.trim()).filter(Boolean).forEach(t => addTag(t));
+        }
+      } else {
+        document.getElementById(step.field).value = value;
+      }
 
       // Auto-fill location if box was just set
       if (step.field === 'f-box' && value !== 'Separate Item') {
@@ -784,7 +826,7 @@ function setupFullVoice() {
     const capturedItem     = document.getElementById('f-item').value.trim();
     const capturedBox      = document.getElementById('f-box').value.trim();
     const capturedLocation = document.getElementById('f-loc').value.trim();
-    const capturedNotes    = document.getElementById('f-notes').value.trim();
+    const capturedNotes    = document.getElementById('f-notes').value.trim(); // contains comma-joined tags
     const capturedEditId   = document.getElementById('edit-id').value;
 
     const summary = 'Item: ' + capturedItem + ' · Box: ' + capturedBox + ' · Location: ' + capturedLocation + (capturedNotes ? ' · Notes: ' + capturedNotes : '');
@@ -977,7 +1019,8 @@ function editItem(id) {
   document.getElementById('f-item').value  =it.item;
   document.getElementById('f-box').value   =it.box;
   document.getElementById('f-loc').value   =it.location;
-  document.getElementById('f-notes').value =it.notes||'';
+  document.getElementById('f-notes').value = it.notes||'';
+  loadTagsFromValue(it.notes||'');
   const fb=document.getElementById('voice-full-feedback');
   fb.textContent='Editing — update fields or re-record voice.'; fb.className='voice-feedback';
 }
@@ -989,6 +1032,7 @@ function deleteItem(id) {
 
 function clearForm() {
   ['edit-id','f-item','f-box','f-loc','f-notes'].forEach(id=>document.getElementById(id).value='');
+  loadTagsFromValue('');
   // Reset the voice wizard
   const btn = document.getElementById('voice-full-btn');
   const lbl = document.getElementById('voice-full-label');
@@ -1031,7 +1075,7 @@ function renderTable() {
       <td>${hl(i.item,q)}</td>
       <td><span class="box-badge${i.box.toLowerCase()==='separate item'?' sep':''}">${i.box.toLowerCase()==='separate item'?'Separate Item':'#'+hl(i.box,q)}</span></td>
       <td><span class="loc-badge">${hl(i.location,q)}</span></td>
-      <td style="color:var(--muted);font-size:.75rem">${i.notes||'—'}</td>
+      <td><div class="tag-wrap">${(i.notes||'').split(',').filter(t=>t.trim()).map(t=>'<span class="tag-badge">'+t.trim()+'</span>').join('')||'<span style="color:var(--muted);font-size:.72rem">—</span>'}</div></td>
       <td style="white-space:nowrap">
         <button class="btn btn-outline" style="padding:.3rem .6rem;font-size:.65rem" onclick="editItem('${i.id}')">Edit</button>
         <button class="btn btn-danger" onclick="deleteItem('${i.id}')">✕</button>
@@ -1046,7 +1090,7 @@ function hl(text,q){
 }
 
 function updateSortButtons() {
-  const map = { added:'sort-newest', item:'sort-item', box:'sort-box', location:'sort-location' };
+  const map = { added:'sort-newest', item:'sort-item', box:'sort-box', location:'sort-location', notes:'sort-notes' };
   Object.entries(map).forEach(([field, id]) => {
     const btn = document.getElementById(id);
     if (!btn) return;
@@ -1128,6 +1172,92 @@ function initApp() {
   setupVoiceSearch();
   loadFromCloud();
 }
+
+
+// ── Tag System ────────────────────────────────────────────────────────────────
+const PRESET_TAGS = ['Books','Camping','Clothing','Documents','Electronics','Kitchen','Sports','Tools'];
+let activeTags = [];
+
+function syncTagsToField() {
+  document.getElementById('f-notes').value = activeTags.join(',');
+}
+
+function renderTagPills() {
+  const container = document.getElementById('tag-pills');
+  container.innerHTML = activeTags.map((t,i) =>
+    `<span class="tag-pill">${t}<button type="button" onmousedown="removeTag(${i})">✕</button></span>`
+  ).join('');
+}
+
+function removeTag(i) {
+  activeTags.splice(i, 1);
+  renderTagPills();
+  syncTagsToField();
+}
+
+function addTag(tag) {
+  tag = tag.trim();
+  if (!tag || activeTags.map(t=>t.toLowerCase()).includes(tag.toLowerCase())) return;
+  // Save as title case if it matches a preset, otherwise as typed
+  const preset = PRESET_TAGS.find(p => p.toLowerCase() === tag.toLowerCase());
+  activeTags.push(preset || tag);
+  renderTagPills();
+  syncTagsToField();
+  document.getElementById('tag-input').value = '';
+  filterTagDropdown();
+}
+
+function loadTagsFromValue(val) {
+  activeTags = val ? val.split(',').map(t=>t.trim()).filter(Boolean) : [];
+  renderTagPills();
+  document.getElementById('tag-input').value = '';
+  filterTagDropdown();
+}
+
+function showTagDropdown() {
+  filterTagDropdown();
+  document.getElementById('tag-dropdown').style.display = 'block';
+}
+
+function hideTagDropdown() {
+  setTimeout(() => { document.getElementById('tag-dropdown').style.display = 'none'; }, 200);
+}
+
+function filterTagDropdown() {
+  const q = document.getElementById('tag-input').value.toLowerCase().trim();
+  const dropdown = document.getElementById('tag-dropdown');
+
+  // Build list: matching presets + any custom tags already used
+  const allUsed = [...new Set(items.flatMap(i => (i.notes||'').split(',').map(t=>t.trim()).filter(Boolean)))];
+  const pool = [...new Set([...PRESET_TAGS, ...allUsed])];
+
+  const matches = pool.filter(t => !q || t.toLowerCase().includes(q));
+  if (!matches.length && !q) { dropdown.style.display = 'none'; return; }
+
+  dropdown.innerHTML = matches.map(t => {
+    const selected = activeTags.map(a=>a.toLowerCase()).includes(t.toLowerCase());
+    return `<div class="tag-dropdown-item${selected?' selected':''}" onmousedown="addTag('${t}')">${selected ? '✓ ' : ''}${t}</div>`;
+  }).join('');
+
+  // If user typed something not in list, show "Add: X" option
+  if (q && !pool.map(t=>t.toLowerCase()).includes(q)) {
+    dropdown.innerHTML += `<div class="tag-dropdown-item" onmousedown="addTag('${q}')" style="color:var(--accent2)">+ Add "${q}"</div>`;
+  }
+
+  dropdown.style.display = matches.length || q ? 'block' : 'none';
+}
+
+function tagKeyDown(e) {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    const val = document.getElementById('tag-input').value.trim().replace(/,$/, '');
+    if (val) addTag(val);
+  } else if (e.key === 'Backspace' && !document.getElementById('tag-input').value && activeTags.length) {
+    removeTag(activeTags.length - 1);
+  }
+}
+
+// Handle voice step 4 for tags — intercept field write
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 // Check if already authenticated this session
