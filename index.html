@@ -1218,12 +1218,29 @@ function loadTagsFromValue(val) {
 
 function showTagDropdown() {
   filterTagDropdown();
-  document.getElementById('tag-dropdown').style.display = 'block';
+  const dd = document.getElementById('tag-dropdown');
+  if (dd) dd.style.display = 'block';
 }
 
 function hideTagDropdown() {
-  setTimeout(() => { document.getElementById('tag-dropdown').style.display = 'none'; }, 200);
+  // Small delay so onmousedown on dropdown items fires before hiding
+  setTimeout(() => {
+    const dd = document.getElementById('tag-dropdown');
+    if (dd) dd.style.display = 'none';
+  }, 150);
 }
+
+// Close dropdown when clicking anywhere outside the tag field
+document.addEventListener('mousedown', function(e) {
+  const field    = document.getElementById('tag-field');
+  const dropdown = document.getElementById('tag-dropdown');
+  if (!field || !dropdown) return;
+  if (!field.contains(e.target) && !dropdown.contains(e.target)) {
+    dropdown.style.display = 'none';
+    const ti = document.getElementById('tag-input');
+    if (ti) ti.value = '';
+  }
+});
 
 function filterTagDropdown() {
   const tagInput = document.getElementById('tag-input');
