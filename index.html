@@ -481,6 +481,8 @@ const SECRET_TOKEN = 'c1a480365488ae9605cf49bcce89ceb1ca97ad67675fb53ebd4ae52923
 let items = [];
 let sortField = 'added', sortAsc = true;
 let saveTimer = null;
+const PRESET_TAGS = ['Books','Camping','Clothing','Documents','Electronics','Kitchen','Sports','Tools'];
+let activeTags = [];
 
 // ── Cloud Sync ────────────────────────────────────────────────────────────────
 function setSyncState(state, msg) {
@@ -1168,15 +1170,12 @@ function initApp() {
   setupFieldVoice('voice-item','f-item');
   setupFieldVoice('voice-box', 'f-box');
   setupFieldVoice('voice-loc', 'f-loc');
-  setupFieldVoice('voice-notes', 'f-notes');
   setupVoiceSearch();
   loadFromCloud();
 }
 
 
 // ── Tag System ────────────────────────────────────────────────────────────────
-const PRESET_TAGS = ['Books','Camping','Clothing','Documents','Electronics','Kitchen','Sports','Tools'];
-let activeTags = [];
 
 function syncTagsToField() {
   document.getElementById('f-notes').value = activeTags.join(',');
